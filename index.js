@@ -11,12 +11,17 @@ var connected = false;
 
 var playerSelection;
 if (process.argv[2]) {
+	//Identify which tank this script will apply to
+	// this is passed in via the command line. 
+	// red = 0, blue = 1, green =2, purple = 3
 	playerSelection = parseInt(process.argv[2], 10);
 }
 
 var enemyBases = [];
 var myTanks = [];
+var enemyTanks = [];
 var allBases = [];
+var myBase = [];
 socket.on("init", function(initD) {
 	if (connected) {
 		return false;
@@ -31,6 +36,9 @@ socket.on("init", function(initD) {
 	enemyBases = initData.players.filter(function(p) {
 		return selectedPlayer.playerColor !== p.playerColor;
 	});
+	myBase = initData.players.filter(function(p) {
+		return selectedPlayer.playerColor == p.playerColor;
+	})[0];
 	allBases = initData.players;
 	var serverTanks = initData.tanks.filter(function(t) {
 		return selectedPlayer.playerColor === t.color;
@@ -41,8 +49,8 @@ socket.on("init", function(initD) {
 
 	setTimeout(function() {
 		startInterval();
-	}, 2000);
-
+	}, 500);
+	console.log(myBase);
 });
 
 
@@ -56,6 +64,10 @@ function startInterval() {
 
 	setInterval(function() {
 		fire();
+	}, 500);
+
+	setInterval(function() {
+		unStick();
 	}, 500);
 }
 
@@ -81,13 +93,24 @@ function fire() {
 	command.emit("fire", orders);
 }
 
+function unStick() {
+	for (var i = 0; i < myTanks.length; i++) {
+		myTanks[i].goal.speed = 1;
+	}
+}
+
 /** recieve from server **/
 socket.on("refresh", function(gameState) {
+	//console.log(gameState.boundaries);
 	var myTanksNewPosition = gameState.tanks.filter(function(t) {
 		return selectedPlayer.playerColor === t.color;
 	});
-
+	var enemyTanks = gameState.tanks.filter(function(t) {
+		return selectedPlayer.playerColor === t.color;
+	});
+// console.log(myTanks);
 	updateMyTanks(myTanksNewPosition);
+	updateEnemyTanks(enemyTanks);
 	calculateGoal();
 	// if (gameState.boundaries.length > 0) {
 	// 	//calculateObstacle(gameState.boundaries);
@@ -99,8 +122,32 @@ function updateMyTanks (myTanksNewPosition) {
 	for (var i = 0; i < myTanks.length; i++) {
 		for (var j = 0; j < myTanksNewPosition.length; j++) {
 			if (myTanks[i].tankNumber === myTanksNewPosition[j].tankNumber) {
+				if(i == 1){console.log(myTanks[i].angle + ":" + myTanksNewPosition[j].angle)};
+				if(Math.abs(myTanks[i].position.x - myTanksNewPosition[j].position.x) == 0 && Math.abs(myTanks[i].position.y - myTanksNewPosition[j].position.y) == 0 ) {
+					myTanks[i].stuck = !myTanks[i].stuck;
+					// setInterval(function() {
+					// 	myTanks[i].stuck = false;
+					// }, 1000);
+
+				}
 				myTanks[i].position = myTanksNewPosition[j].position;
 				myTanks[i].angle = myTanksNewPosition[j].angle;
+				myTanks[i].hasFlag = myTanksNewPosition[j].hasFlag;
+			}
+		}
+	}
+}
+
+function updateEnemyTanks (enemyTanksNewPosition) {
+	for (var i = 0; i < enemyTanks.length; i++) {
+		for (var j = 0; j < enemyTanksNewPosition.length; j++) {
+			if (enemyTanks[i].tankNumber === enemyTanksNewPosition[j].tankNumber) {
+				enemyTanks[i].position = enemyTanksNewPosition[j].position;
+				enemyTanks[i].angle = enemyTanksNewPosition[j].angle;
+				enemyTanks[i].hasFlag = enemyTanksNewPosition[j].hasFlag;
+			}
+			if(enemyTanks[i].hasFlag) {
+				console.log("enemy has a flag");
 			}
 		}
 	}
@@ -141,9 +188,12 @@ function calculateGoal() {
 		if (distance >= 20) {
 			myTanks[i].goal.speed = 1;
 		} else {
-			//myTanks[i].goal.speed = 0;
 			myTanks[i].missionAccomplished();
 		}
+		if(myTanks[i].stuck) {
+			myTanks[i].backup();
+		}
+
 	}
 }
 
@@ -164,40 +214,78 @@ var Tank = function(tankNumber) {
 	this.angle;
 	this.goal = {
 		speed: 0,
-		angleVel: 0
+		angleVel: -1
 	};
 	this.avoidObstacle = {
 		speed: 0,
-		angleVel: 0
+		angleVel: -1
 	};
 	this.target = {x: 100, y: 100};
 	this.hasATarget = false;
+	this.stuck = false;
 };
 
 Tank.prototype = {
 	getTarget: function() {
+		var capturedFlags = enemyTanks.filter(function(t) {
+			return t.hasFlag == selectedPlayer.playerColor ;
+		});
+		if(capturedFlags.length) {
+			console.log("CapturedFlags: Changing Target");
+			console.log(capturedFlags)
+			this.target = capturedFlags[0].position;
+		}
 		return this.target;
 	},
 	hasTarget: function() {
 		return this.hasATarget;
 	},
 	generateTarget: function() {
-		/* //wander between enemy bases
-		var randomNumber = Math.floor(Math.random() * 10 % enemyBases.length); //random num between 0 and enemyBases.length
-		//var randomNumber = 1;
-		//console.log(randomNumber, enemyBases[randomNumber].base);
-		this.target = enemyBases[randomNumber].base.position;
-		*/
-
-		//wander between all bases
-		var randomNumber = Math.floor(Math.random() * 10 % allBases.length); //random num between 0 and enemyBases.length
-		this.target = allBases[randomNumber].base.position;
-
+		// this.target = this.wander();
+		if(this.hasFlag){
+			this.target = this.goHome();
+		} else {
+			this.target = this.attack();
+		}
+		console.log(enemyTanks);
+		var capturedFlags = enemyTanks.filter(function(t) {
+			return t.hasFlag == selectedPlayer.playerColor	;
+		});
+		if(capturedFlags[0]) {
+			console.log("CapturedFlags");
+			console.log(capturedFlags[0])
+			this.target = capturedFlags[0].position;
+		}
+		for (var j = 0; j < enemyTanks.length; j++) {
+			if(enemyTanks[j].hasFlag){
+				goal = enemyTanks[j].position;
+				continue;
+			}
+		}
 		this.hasATarget = true;
 		return this.target;
 	},
 	missionAccomplished: function() {
 		this.hasATarget = false;
+	},
+	attack: function() {
+		return allBases[(playerSelection +1)%allBases.length].base.position;
+	},
+	goHome: function() {
+		return myBase.base.position;
+	},
+	wander: function() {
+		//wander between all bases
+		//random num between 0 and enemyBases.length
+		var randomNumber = Math.floor(Math.random() * 10 % allBases.length); 
+		return allBases[randomNumber].base.position;
+	},
+	backup: function() {
+		this.goal.speed = -1;
+		this.goal.angleVel = 0;
+		// this.goal.angleVel = (this.goal.angle+90)%360;
+		// this.goal.angleVel = (this.goal.angle+90)%360;
+		this.stuck = false;
 	}
 };
 
