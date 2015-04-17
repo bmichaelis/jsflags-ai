@@ -195,7 +195,7 @@ Tank.prototype = {
 		if(this.hasFlag){
 			this.returnHome();
 		} else {
-			this.wander();
+			this.attack();
 		}
 
 		this.hasATarget = true;
@@ -211,6 +211,20 @@ Tank.prototype = {
 		//wander between all bases
 		var randomNumber = Math.floor(Math.random() * 10 % allBases.length); //random num between 0 and enemyBases.length
 		this.target = allBases[randomNumber].base.position;
+	},
+	attack: function() {
+		var closestBase = {};
+		var baseDistance, distance = 0;
+		//attach nearest base
+		for(var i = 0; i < enemyBases.length; i++){
+			distance = round(Math.sqrt(Math.pow(( enemyBases[i].base.position.x - this.position.x ), 2) + Math.pow(( enemyBases[i].base.position.y - this.position.y ), 2)), 4);
+			if(!baseDistance || baseDistance > distance){
+				baseDistance = distance;
+				closestBase = enemyBases[i];
+			}
+		}
+		var randomNumber = Math.floor(Math.random() * 10 % allBases.length); //random num between 0 and enemyBases.length
+		this.target = closestBase.base.position;
 	}
 };
 
