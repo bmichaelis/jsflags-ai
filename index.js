@@ -17,6 +17,8 @@ if (process.argv[2]) {
 var enemyBases = [];
 var myTanks = [];
 var allBases = [];
+//Create a variable to store my base object
+var myBase = {};
 socket.on("init", function(initD) {
 	if (connected) {
 		return false;
@@ -31,6 +33,12 @@ socket.on("init", function(initD) {
 	enemyBases = initData.players.filter(function(p) {
 		return selectedPlayer.playerColor !== p.playerColor;
 	});
+	// Filter the players object and return only an array of my base
+	// Assign the first element [0] to the myBase variable;
+	myBase = initData.players.filter(function(p) {
+		return selectedPlayer.playerColor == p.playerColor;
+	})[0].base;
+	console.log(myBase);
 	allBases = initData.players;
 	var serverTanks = initData.tanks.filter(function(t) {
 		return selectedPlayer.playerColor === t.color;
@@ -101,6 +109,7 @@ function updateMyTanks (myTanksNewPosition) {
 			if (myTanks[i].tankNumber === myTanksNewPosition[j].tankNumber) {
 				myTanks[i].position = myTanksNewPosition[j].position;
 				myTanks[i].angle = myTanksNewPosition[j].angle;
+				myTanks[i].hasFlag = myTanksNewPosition[j].hasFlag;
 			}
 		}
 	}
@@ -182,22 +191,26 @@ Tank.prototype = {
 		return this.hasATarget;
 	},
 	generateTarget: function() {
-		/* //wander between enemy bases
-		var randomNumber = Math.floor(Math.random() * 10 % enemyBases.length); //random num between 0 and enemyBases.length
-		//var randomNumber = 1;
-		//console.log(randomNumber, enemyBases[randomNumber].base);
-		this.target = enemyBases[randomNumber].base.position;
-		*/
 
-		//wander between all bases
-		var randomNumber = Math.floor(Math.random() * 10 % allBases.length); //random num between 0 and enemyBases.length
-		this.target = allBases[randomNumber].base.position;
+		if(this.hasFlag){
+			this.returnHome();
+		} else {
+			this.wander();
+		}
 
 		this.hasATarget = true;
 		return this.target;
 	},
 	missionAccomplished: function() {
 		this.hasATarget = false;
+	},
+	returnHome: function() {
+		this.target = myBase.position;
+	},
+	wander: function() {
+		//wander between all bases
+		var randomNumber = Math.floor(Math.random() * 10 % allBases.length); //random num between 0 and enemyBases.length
+		this.target = allBases[randomNumber].base.position;
 	}
 };
 
